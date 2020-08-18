@@ -1,0 +1,178 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+Euclidean rhythm calculator
+
+
+
+
+
+Implementation
+
+For our javascript implementation we utilize two functions. The first calculates the basic euclidean rhythm, given a number of steps and pulses, and stores it an array called storedRhythm as a sequence of 1’s and 0’s.
+
+```
+//calculate a euclidean rhythm
+function euclid(steps,  pulses, rotation){
+    storedRhythm = []; //empty array which stores the rhythm.
+    //the length of the array is equal to the number of steps
+    //a value of 1 for each array element indicates a pulse
+
+    var bucket = 0; //out variable to add pulses together for each step
+
+    //fill array with rhythm
+    for( var i=0 ; i < steps ; i++){ 
+        bucket += pulses; 
+            if(bucket >= steps) {
+            bucket -= steps;
+            storedRhythm.push(1); //'1' indicates a pulse on this beat
+        } else {
+            storedRhythm.push(0); //'0' indicates no pulse on this beat
+        }
+    }
+}
+```
+
+```{r}
+euclid <- function(steps,pulses,rotation){
+  storedRhythm <- vector(length=steps)
+  bucket <- 0
+  for(ii in 1:steps){
+    bucket <- bucket + pulses
+    if(bucket >= steps){
+      bucket <- bucket - steps
+      storedRhythm[ii]<-1
+    }
+    else{
+      storedRhythm[ii]<-0
+    }
+    message(sprintf("%d",storedRhythm[ii]),appendLF = F)
+  }
+  message("")
+  return(storedRhythm)
+}
+  
+  
+euclid(13,5,1)
+  
+euclid(13,10,1)
+  
+euclid(61,23,1)
+
+
+```
+
+
+
+```{Rcpp firstChunk}
+#include <Rcpp.h>
+
+//[[Rcpp::export]]
+Rcpp::IntegerVector euclidpp(Rcpp::Integer steps, Rcpp::Integer pulses) {
+  Rcpp::IntegerVector storedRhythm(steps);
+  
+  return storedRhythm;
+}
+```
+
+
+
+
+
+
+
+
+
+The second function carries out the rotation:
+
+```
+function rotateSeq(seq, rotate){
+    var output = new Array(seq.length); //new array to store shifted rhythm
+    var val = seq.length - rotate;
+
+    for( var i=0; i < seq.length ; i++){
+        output[i] = seq[ Math.abs( (i+val) % seq.length) ];
+    }
+
+    return output;
+}
+```
+
+Querying the current beat
+
+Finally, we have a function for querying the storedRhythm array to find out if there is a pulse on the current beat:
+
+```
+//send triggers
+    function query_beat(curBeat){
+    var curStep = curBeat % curSteps; //wraps beat around if it is higher than the number of steps
+    return storedRhythm[curStep];
+}
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
+*Replicating Bjorklund's 'figure 4' algorithm:*
+
+
+The original looks like this :
+
+```
+void function compute_bitmap (int num_slots, int num_pulses)
+{
+    /*---------------------
+    * First, compute the count and remainder arrays
+    */
+    divisor = num_slots – num_pulses;
+    remainder[0] = num_pulses;
+    level = 0;
+    do {
+        count[level] = divisor / remainder[level];
+        remainder[level+1] = mod(divisor, remainder[level]);
+        divisor = remainder[level];
+        level = level + 1;
+    }while (remainder[level] > 1);
+    count[level] = divisor;
+    /*---------------------
+    * Now build the bitmap string
+    */
+    build_string (level);
+} 
+```
+
+
+```{r}
+require (stringr)
+nslots <- 8
+npulses <- 5
+divisor <- nslots-npulses
+remainder <- vector(length=nslots)
+
+#REMEMBER! R is 1-indexed, C is 0-indexed
+rem_lminus1 <- npulses
+level <- 0
+
+while(T){
+  
+  level<- level + 1
+  if(level>10)
+    break;
+}
+
+
+
+```
+ ..
