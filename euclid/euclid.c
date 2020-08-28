@@ -7,15 +7,33 @@
 //
 
 //Get the Pure Data headers from: https://github.com/pure-data/pure-data/blob/master/src/m_pd.h
-#include <stdlib.h>
-#include <string.h>
+//#include <stdlib.h>
+//#include <string.h>
 #include "m_pd.h"
+
+
+
+
+////////////////////////////////////////////////////////////////////////////////
+// JOHN TUFFEN'S WONKYSTUFF RNG CODE: 
+// See http://doitwireless.com/2014/06/26/8-bit-pseudo-random-number-generator/
+// https://en.wikipedia.org/wiki/Linear-feedback_shift_register#Galois_LFSRs
+////////////////////////////////////////////////////////////////////////////////
+uint8_t rnd(void)
+{
+  static uint8_t r = 0x23;
+  uint8_t lsb = r & 1;
+  r >>= 1;
+  r ^= (-lsb) & 0xB8;
+  return r;
+}
+
 
 
 ////////////////////////////////////////////////////////////////////////////////
 // Euclid functions
 ////////////////////////////////////////////////////////////////////////////////
-
+//https://www.computermusicdesign.com/simplest-euclidean-rhythm-algorithm-explained/
 
 #define MAX_STEPS (64)
 
@@ -46,7 +64,47 @@
 */
 
 
-void euclid(int steps, int pulses, int rotation, char *storedRhythm){
+//TODO: do it in-place
+//function rotateSeq(seq, rotate){
+//    var output = new Array(seq.length); //new array to store shifted rhythm
+//    var val = seq.length - rotate;
+//
+//    for( var i=0; i < seq.length ; i++){
+//        output[i] = seq[ Math.abs( (i+val) % seq.length) ];
+//    }
+//
+//    return output;
+//}
+
+//Rotate in-place from https://www.codewhoop.com/array/rotation-in-place.html
+int gcd(int a, int b)
+{
+  if(b==0)
+    return a;
+  else
+    return gcd(b, a%b);
+}
+
+void ArrayRotate (char A[], int n, int k)
+{
+  int d=-1,i,temp,j;
+  for(i=0;i<gcd(n,k);i++){
+    j=i;
+    temp=A[i];
+    while(1){
+      d=(j+k)%n;
+      if(d==i)
+        break;
+      A[j]=A[d];
+      j=d;
+    }
+    A[j]=temp;
+  }
+}
+
+
+
+void euclid(int steps, int pulses, int rotation, char storedRhythm[]){
 	int bucket = 0;
   for(int ii=0;ii<steps;ii++){
 		bucket += pulses;
@@ -57,6 +115,10 @@ void euclid(int steps, int pulses, int rotation, char *storedRhythm){
 			storedRhythm[ii] = '0';
 		}
 	}
+ 
+  if(rotation)
+		ArrayRotate(storedRhythm, steps, rotation);
+
 }
 
 
@@ -76,9 +138,9 @@ typedef struct _euclid {
     t_object    x_obj;
     t_int       init_count, current_count;
     t_int       mod_A, mod_B;
-    t_inlet     *in_mod_A, *in_mod_B;
+    t_inlet     *in_mod_A, *in_mod_B, *in_rot;
     t_outlet    *out_A, *out_B, *out_synch, *out_count;
-    char 				*storedRhythm;
+    char 				storedRhythm[MAX_STEPS];
 } t_euclid;
 
 //Set the ratio (A:B)
@@ -106,7 +168,7 @@ void euclid_onBangMsg(t_euclid *x){
     t_int n       = x->current_count;
     
     //Bangs
-    post("beat %d: pulse = %c",n,x->storedRhythm[n]);
+    //post("beat %d: pulse = %c",n,x->storedRhythm[n]);
     if(x->storedRhythm[n]=='1'){
         outlet_bang(x->out_A);
 		}
@@ -179,8 +241,6 @@ void euclid_onSetB(t_euclid *x, t_floatarg f){
 void *euclid_new(t_floatarg f1, t_floatarg f2){
     //Create an instance of the euclid class
     t_euclid *x = (t_euclid *)pd_new(euclid_class);
-
-    x->storedRhythm = (char *) malloc(MAX_STEPS * sizeof(char));
     
     //Initialize the counts
     //Since we'll be doing this in a few different locations, we'll create a method to accomplish this
@@ -197,6 +257,7 @@ void *euclid_new(t_floatarg f1, t_floatarg f2){
     //Handles (pointers, really) are stored so that we can free them later
     x->in_mod_A = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ratio_A"));
     x->in_mod_B = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ratio_B"));
+    x->in_rot = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("rotation"));
 
     //Create outlets
     //Unlike the first inlet, the first isn' created automatically
@@ -210,7 +271,8 @@ void *euclid_new(t_floatarg f1, t_floatarg f2){
 
 
     //Euclid stuff:
-    memset(x->storedRhythm,0,MAX_STEPS*sizeof(char));
+    //memset(x->storedRhythm,0,MAX_STEPS*sizeof(char));
+    for(int ii=0;ii<MAX_STEPS;ii++)x->storedRhythm[ii]=0;
     euclid(x->mod_A,x->mod_B,0,x->storedRhythm);
     post("pattern is %s",x->storedRhythm);
       
@@ -227,7 +289,7 @@ void euclid_free(t_euclid *x){
     outlet_free(x->out_synch);
     outlet_free(x->out_count);
 
-    free(x->storedRhythm);
+    //free(x->storedRhythm);
 }
 
 //The _setup method initializes the class in memory
