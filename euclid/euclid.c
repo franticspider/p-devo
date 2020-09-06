@@ -115,6 +115,9 @@ void euclid(int steps, int pulses, int rotation, char storedRhythm[]){
 			storedRhythm[ii] = '0';
 		}
 	}
+  //Set the unused cells in the array to 0 so they don't print
+  for(int ii = steps;ii< MAX_STEPS;ii++)
+    storedRhythm[ii]=0;
  
   if(rotation)
 		ArrayRotate(storedRhythm, steps, rotation);
@@ -139,19 +142,24 @@ typedef struct _euclid {
     t_int       init_count, current_count;
     t_int       steps, pulses, rot;
     t_inlet     *in_steps, *in_pulses, *in_rot;
-    t_outlet    *out_pattern, *out_B, *out_synch, *out_count;
+    t_outlet    *out_pattern, *out_steps, *out_pulses, *out_rot, *out_count;
     char 				storedRhythm[MAX_STEPS];
 } t_euclid;
 
-//Set the ratio (A:B)
+//Set the parameters
 void euclid_setMods(t_euclid *x, t_floatarg f1, t_floatarg f2, t_floatarg f3){
     //Ensure no negative numbers or 0s are received
     //A
     x->steps = (f1 <= 0) ? MAX_STEPS : f1;
     //B
-    x->pulses = (f2 <= 0) ? 1 : f2;
+    x->pulses = (f2 < 0) ? 0 : f2;
 
-    post("setMods args: f1: %f, f2: %f, f3 %f",f1,f2,f3);
+    x->rot = (f3 <0) ? 0 : f3; 
+
+    post("setMods args:: steps: %0.0f, pulses: %0.0f, rot: %0.0f",f1,f2,f3);
+
+    euclid(x->steps,x->pulses,x->rot,x->storedRhythm);
+    post("pattern is %s",x->storedRhythm);
 }
 
 //Reset the count to start at 0
@@ -177,6 +185,9 @@ void euclid_onBangMsg(t_euclid *x){
     
     //Always output the current count
     outlet_float(x->out_count, x->current_count);
+    outlet_float(x->out_steps, x->steps);
+    outlet_float(x->out_pulses, x->pulses);
+    outlet_float(x->out_rot, x->rot);
     
     //Increment the current count
     x->current_count++;
@@ -221,7 +232,7 @@ void euclid_onSet_steps(t_euclid *x, t_floatarg f){
 }
 
 //Set B part of ratio; however, don't reset
-void euclid_onSetB(t_euclid *x, t_floatarg f){
+void euclid_onSet_pulses(t_euclid *x, t_floatarg f){
     //New number for B of A:B
     euclid_setMods(x, x->steps, f, x->rot);
 }
@@ -254,7 +265,7 @@ void *euclid_new(t_floatarg f1, t_floatarg f2, t_floatarg f3){
     //Inlets are created from left to right on the object
     //Handles (pointers, really) are stored so that we can free them later
     x->in_steps = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("steps"));
-    x->in_pulses = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ratio_B"));
+    x->in_pulses = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("pulses"));
     x->in_rot = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("rotation"));
 
     //Create outlets
@@ -263,9 +274,10 @@ void *euclid_new(t_floatarg f1, t_floatarg f2, t_floatarg f3){
     //Outlets are created from left to right on the object
     //Handles (pointers, really) are stored so that we can send data to the outlets and/or free them later
     x->out_pattern = outlet_new(&x->x_obj, &s_bang);
-    x->out_B = outlet_new(&x->x_obj, &s_bang);
-    x->out_synch = outlet_new(&x->x_obj, &s_bang);
-    x->out_count = outlet_new(&x->x_obj, &s_float);
+    x->out_steps   = outlet_new(&x->x_obj, &s_float);
+    x->out_pulses  = outlet_new(&x->x_obj, &s_float);
+    x->out_rot     = outlet_new(&x->x_obj, &s_float);
+    x->out_count   = outlet_new(&x->x_obj, &s_float);
 
 
     //Euclid stuff:
@@ -282,12 +294,15 @@ void euclid_free(t_euclid *x){
     //If we create any inlets or outlets ourselves, we need to free them to avoid memory leaks
     inlet_free(x->in_steps);
     inlet_free(x->in_pulses);
+    inlet_free(x->in_rot);
+
+		//outlets
     outlet_free(x->out_pattern);
-    outlet_free(x->out_B);
-    outlet_free(x->out_synch);
+    outlet_free(x->out_steps);
+    outlet_free(x->out_pulses);
+    outlet_free(x->out_rot);
     outlet_free(x->out_count);
 
-    //free(x->storedRhythm);
 }
 
 //The _setup method initializes the class in memory
@@ -324,14 +339,14 @@ void euclid_setup(void){
                     A_DEFFLOAT, //A of A:B
                     0);
     
-    //ratio_B: set B but don't reset
+    //pulses: set pulses and update
     class_addmethod(euclid_class,
-                    (t_method)euclid_onSetB,
-                    gensym("ratio_B"),
+                    (t_method)euclid_onSet_pulses,
+                    gensym("pulses"),
                     A_DEFFLOAT, //B of A:B
                     0);
     
-    //ratio_B: set B but don't reset
+    //rotation: set rotation and update
     class_addmethod(euclid_class,
                     (t_method)euclid_onSetRotation,
                     gensym("rotation"),
