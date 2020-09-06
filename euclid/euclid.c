@@ -137,19 +137,21 @@ static t_class *euclid_class;
 typedef struct _euclid {
     t_object    x_obj;
     t_int       init_count, current_count;
-    t_int       mod_A, mod_B;
-    t_inlet     *in_mod_A, *in_mod_B, *in_rot;
-    t_outlet    *out_A, *out_B, *out_synch, *out_count;
+    t_int       steps, pulses, rot;
+    t_inlet     *in_steps, *in_pulses, *in_rot;
+    t_outlet    *out_pattern, *out_B, *out_synch, *out_count;
     char 				storedRhythm[MAX_STEPS];
 } t_euclid;
 
 //Set the ratio (A:B)
-void euclid_setMods(t_euclid *x, t_floatarg f1, t_floatarg f2){
+void euclid_setMods(t_euclid *x, t_floatarg f1, t_floatarg f2, t_floatarg f3){
     //Ensure no negative numbers or 0s are received
     //A
-    x->mod_A = (f1 <= 0) ? 1 : f1;
+    x->steps = (f1 <= 0) ? MAX_STEPS : f1;
     //B
-    x->mod_B = (f2 <= 0) ? 1 : f2;
+    x->pulses = (f2 <= 0) ? 1 : f2;
+
+    post("setMods args: f1: %f, f2: %f, f3 %f",f1,f2,f3);
 }
 
 //Reset the count to start at 0
@@ -162,46 +164,24 @@ void euclid_resetCount(t_euclid *x){
 //Perform on bang
 void euclid_onBangMsg(t_euclid *x){
     //Create local vars for convenience
-    t_int mod_A  = x->mod_A;
-    t_int mod_B   = x->mod_B;
-    t_int mod_synch = mod_A * mod_B;
+    //t_int mod_A  = x->steps;
+    //t_int mod_B   = x->mod_B;
+    //t_int mod_synch = mod_A * mod_B;
     t_int n       = x->current_count;
     
     //Bangs
     //post("beat %d: pulse = %c",n,x->storedRhythm[n]);
     if(x->storedRhythm[n]=='1'){
-        outlet_bang(x->out_A);
+        outlet_bang(x->out_pattern);
 		}
-
-
-
-
-    /*if(n % mod_synch == 0){
-        //Bangs will be synched when the current count % (A*B) == 0
-        //On synch, bang all outputs and reset the current count
-        outlet_bang(x->out_A);
-        outlet_bang(x->out_B);
-        outlet_bang(x->out_synch);
-        
-        //Reset the count
-        x->current_count = 0;
-    } else {
-        // the current count % A == 0 will cause a bang to out_B
-        if(n % mod_A == 0) outlet_bang(x->out_A);
-        
-        //Same as above but with B
-        if(n % mod_B == 0) outlet_bang(x->out_B);
-    }*/
     
     //Always output the current count
     outlet_float(x->out_count, x->current_count);
     
     //Increment the current count
     x->current_count++;
-    if(x->current_count >= x->mod_A)
+    if(x->current_count >= x->steps)
       x->current_count =0;
-
-
 }
 
 void euclid_onResetMsg(t_euclid *x){
@@ -210,11 +190,21 @@ void euclid_onResetMsg(t_euclid *x){
 
 //Handle lists: [A B(
 void euclid_onListMsg(t_euclid *x, t_symbol *s, t_int argc, t_atom *argv){
+
+		post("Found %d arguments",argc);
+
     switch(argc){
             //Lists must have two arguments (to set both A and B); otherwise we'll throw an error
         case 2:
             //Set mod_A and mod_B
-            euclid_setMods(x, atom_getfloat(argv), atom_getfloat(argv+1));
+            euclid_setMods(x, atom_getfloat(argv), atom_getfloat(argv+1), 0);
+            
+            //Reset the counts
+            euclid_resetCount(x);
+            break;
+        case 3:
+            //Set mod_A and mod_B
+            euclid_setMods(x, atom_getfloat(argv), atom_getfloat(argv+1), atom_getfloat(argv+2));
             
             //Reset the counts
             euclid_resetCount(x);
@@ -225,20 +215,27 @@ void euclid_onListMsg(t_euclid *x, t_symbol *s, t_int argc, t_atom *argv){
 }
 
 //Set A part of ratio; however, don't reset
-void euclid_onSet_A(t_euclid *x, t_floatarg f){
+void euclid_onSet_steps(t_euclid *x, t_floatarg f){
     //New number for A of A:B
-    euclid_setMods(x, f, x->mod_B);
+    euclid_setMods(x, f, x->pulses, x->rot);
 }
 
 //Set B part of ratio; however, don't reset
 void euclid_onSetB(t_euclid *x, t_floatarg f){
     //New number for B of A:B
-    euclid_setMods(x, x->mod_A, f);
+    euclid_setMods(x, x->steps, f, x->rot);
 }
+
+//Set B part of ratio; however, don't reset
+void euclid_onSetRotation(t_euclid *x, t_floatarg f){
+    //New number for B of A:B
+    euclid_setMods(x, x->steps, x->pulses, f);
+}
+
 
 //The _new method is a class constructor
 //It is required to be named [filename]_new()
-void *euclid_new(t_floatarg f1, t_floatarg f2){
+void *euclid_new(t_floatarg f1, t_floatarg f2, t_floatarg f3){
     //Create an instance of the euclid class
     t_euclid *x = (t_euclid *)pd_new(euclid_class);
     
@@ -247,24 +244,25 @@ void *euclid_new(t_floatarg f1, t_floatarg f2){
     euclid_resetCount(x);
     
     //Initialize the mods (e.g. num % mod_A)
-    //Since we'll be doing this in a few different locations, we'll create a method to accomplish this
-    euclid_setMods(x, f1, f2);
+    //Since we'll be doing this in a few different locations, 
+    //we'll create a method to accomplish this
+    euclid_setMods(x, f1, f2, f3);
 
     //Create inlets
     //The left-most inlet is created and destroyed automatically
     //Any additional inlets needed must be explicilty created
     //Inlets are created from left to right on the object
     //Handles (pointers, really) are stored so that we can free them later
-    x->in_mod_A = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ratio_A"));
-    x->in_mod_B = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ratio_B"));
+    x->in_steps = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("steps"));
+    x->in_pulses = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("ratio_B"));
     x->in_rot = inlet_new(&x->x_obj, &x->x_obj.ob_pd, &s_float, gensym("rotation"));
 
     //Create outlets
-    //Unlike the first inlet, the first isn' created automatically
+    //Unlike the first inlet, the first outlet isn't created automatically
     //Any outlets needed must be explicitly created
     //Outlets are created from left to right on the object
     //Handles (pointers, really) are stored so that we can send data to the outlets and/or free them later
-    x->out_A = outlet_new(&x->x_obj, &s_bang);
+    x->out_pattern = outlet_new(&x->x_obj, &s_bang);
     x->out_B = outlet_new(&x->x_obj, &s_bang);
     x->out_synch = outlet_new(&x->x_obj, &s_bang);
     x->out_count = outlet_new(&x->x_obj, &s_float);
@@ -272,8 +270,8 @@ void *euclid_new(t_floatarg f1, t_floatarg f2){
 
     //Euclid stuff:
     //memset(x->storedRhythm,0,MAX_STEPS*sizeof(char));
-    for(int ii=0;ii<MAX_STEPS;ii++)x->storedRhythm[ii]=0;
-    euclid(x->mod_A,x->mod_B,0,x->storedRhythm);
+    //for(int ii=0;ii<MAX_STEPS;ii++)x->storedRhythm[ii]=0;
+    euclid(x->steps,x->pulses,0,x->storedRhythm);
     post("pattern is %s",x->storedRhythm);
       
     //Return the instance
@@ -282,9 +280,9 @@ void *euclid_new(t_floatarg f1, t_floatarg f2){
 
 void euclid_free(t_euclid *x){
     //If we create any inlets or outlets ourselves, we need to free them to avoid memory leaks
-    inlet_free(x->in_mod_A);
-    inlet_free(x->in_mod_B);
-    outlet_free(x->out_A);
+    inlet_free(x->in_steps);
+    inlet_free(x->in_pulses);
+    outlet_free(x->out_pattern);
     outlet_free(x->out_B);
     outlet_free(x->out_synch);
     outlet_free(x->out_count);
@@ -319,10 +317,10 @@ void euclid_setup(void){
                     gensym("reset"),
                     0);
 
-    //ratio_A: set A but don't reset
+    //steps: set steps and update
     class_addmethod(euclid_class,
-                    (t_method)euclid_onSet_A,
-                    gensym("ratio_A"),
+                    (t_method)euclid_onSet_steps,
+                    gensym("steps"),
                     A_DEFFLOAT, //A of A:B
                     0);
     
@@ -330,6 +328,13 @@ void euclid_setup(void){
     class_addmethod(euclid_class,
                     (t_method)euclid_onSetB,
                     gensym("ratio_B"),
+                    A_DEFFLOAT, //B of A:B
+                    0);
+    
+    //ratio_B: set B but don't reset
+    class_addmethod(euclid_class,
+                    (t_method)euclid_onSetRotation,
+                    gensym("rotation"),
                     A_DEFFLOAT, //B of A:B
                     0);
     
